@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+
+  <!-- CesiumJS -->
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GEO-SOVEREIGN</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+      #toggleCesiumBtn {
+    position: absolute;
+    top: 95px; /* ajuste selon ta topbar */
+    right: 30px;
+    z-index: 1000;
+    background-color: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 0 5px rgba(0,0,0,0.3);
+    transition: background-color 0.3s;
+  }
+  
+  #toggleCesiumBtn:hover {
+    background-color: #334155;
+  }
+.filters-box,
+.dashboard-boxes,
+.chart-box {
+  background-color: #1e293b;
+  padding: 10px 12px;
+  border-radius: 10px;
+  min-height: 100px;
+}
+
+.dashboard-boxes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-box {
+  text-align: center;
+}
+
+.dashboard-box .percentage {
+  font-size: 20px;
+  color: #38bdf8;
+  margin-bottom: 4px;
+}
+
+.dashboard-box .label {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+.filters-box button.active {
+  background-color: #38bdf8;
+  color: #0f172a;
+}
+
+.tools-box {
+  grid-column: span 2; /* prend toute la largeur */
+  justify-content: center;
+  display: flex;
+  padding-top: 5px;
+}
+    .fiche-observatoire {
+  position: absolute;
+  top: 80px;
+  right: 30px;
+  width: 260px;
+  background-color: #1e293b;
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  color: #e2e8f0;
+  z-index: 999;
+}
+
+.fiche-observatoire h3 {
+  margin-bottom: 10px;
+  font-size: 16px;
+  color: #38bdf8;
+}
+
+.fiche-observatoire p {
+  font-size: 14px;
+  margin: 6px 0;
+}
+    header {
+  background-color: #0f172a;
+  padding: 10px 20px;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-flag {
+  width: 32px;
+  height: auto;
+  border-radius: 4px;
+}
+
+.logo-observatoire {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.logo-observatoire h1 {
+  color: #38bdf8;
+  font-size: 24px;
+  margin-bottom: 2px;
+}
+
+.logo-observatoire .subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+
+.header-right {
+  text-align: right;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.status {
+  display: block;
+  color: #4ade80;
+  font-weight: bold;
+}
+
+.date {
+  font-style: italic;
+  color: #cbd5e1;
+}
+    .logo-observatoire {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.logo-observatoire h1 {
+  color: #38bdf8;
+  font-size: 24px;
+  margin-bottom: 2px;
+}
+
+.logo-observatoire .subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+    #cesiumLayers label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+#cesiumLayers input[type="checkbox"] {
+  transform: scale(1.2);
+  accent-color: #38bdf8;
+}
+    #cesiumLayers {
+  position: fixed;
+  top: 90px;
+  right: 20px;
+  background: rgba(30, 41, 59, 0.8);
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 10px;
+  z-index: 1000;
+}
+#cesiumLayers h4 {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #60a5fa;
+}
+.bottom-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  align-items: start;
+}
+.chart-box {
+  padding: 0 12px 12px;
+}
+
+canvas {
+  height: 120px !important;
+  width: 100%;
+  background-color: #1e293b;
+  border-radius: 10px;
+}   body {
+      background-color: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      background-color: #0f172a;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    header h1 {
+      color: #38bdf8;
+      font-size: 24px;
+    }
+
+    nav {
+      display: flex;
+      gap: 25px;
+    }
+
+    nav a {
+      color: #cbd5e1;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      color: #60a5fa;
+    }
+
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 250px;
+      background-color: #1e293b;
+      padding: 25px 20px;
+      overflow-y: auto;
+    }
+
+    .sidebar h2 {
+  font-size: 15px;
+  color: #60a5fa;
+  margin: 10px 0 6px; /* réduit l'espacement vertical */
+}
+    .logo-flag {
+  width: 48px;
+  height: auto;
+  border-radius: 6px;
+}
+.sidebar ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0 0 12px; /* réduit la marge en bas de chaque liste */
+}
+    .sidebar li {
+  padding: 6px 10px; /* réduit l'espacement interne */
+  margin-bottom: 4px; /* espace plus serré entre les lignes */
+  border-radius: 6px;
+  cursor: pointer;
+  color: #cbd5e1;
+  font-size: 14px;
+}
+    .sidebar li:hover {
+      background-color: #334155;
+    }
+
+    .content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    #map {
+      height: 700px;
+      width: 100%;
+      border-radius: 10px;
+    }
+
+    .legend, .dashboard, .chart-box, .tools-box, .filters-box {
+      background-color: #1e293b;
+      padding: 15px;
+      border-radius: 10px;
+    }
+
+    .legend {
+      font-size: 14px;
+    }
+
+    .dashboard {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .dashboard-box {
+      text-align: center;
+      flex: 1;
+      margin: 0 10px;
+    }
+
+    .dashboard-box .percentage {
+      font-size: 28px;
+      color: #38bdf8;
+    }
+
+    .dashboard-box .label {
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+
+   
+    .filters-box button {
+      background-color: #334155;
+      color: #e2e8f0;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    .filters-box button.active {
+      background-color: #38bdf8;
+      color: #0f172a;
+    }
+    .sidebar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between; /* espace entre le haut et le bas */
+}
+
+.export-btn-container {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+.export-btn-container button {
+  background-color: #334155;
+  color: #e2e8f0;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  width: 100%;
+  cursor: pointer;
+}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <img src="images/logo-geosovereign.png" alt="Logo GEO-SOVEREIGN" class="logo-flag">
+      <div class="logo-observatoire">
+        <h1>GEO-SOVEREIGN</h1>
+        <span class="subtitle">Observatoire Spatial National 🇹🇩</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="status">🟢 En ligne</span>
+      <span class="date" id="currentDate"></span>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="sidebar">
+      <h2>Thématiques</h2>
+      <ul>
+        <li>💧 Eau</li>
+        <li>🌡️ Climat</li>
+        <li>🏙️ Urbanisme</li>
+        <li>🌱 Ressources</li>
+      </ul>
+      <h2>Zone à risque</h2>
+      <ul>
+        <li>🔵 Nappes phréatiques</li>
+        <li>🔴 Milieux à risque</li>
+        <li>🟡 Friches urbaines</li>
+      </ul>
+      <h2>Données</h2>
+      <ul>
+        <li><strong>🛰️ Imagerie</strong></li>
+        <li>
+          <label><input type="checkbox" id="toggleSentinel" checked /> Sentinel-2 NDVI</label>
+        </li>
+        <li>📊 Tableau de bord</li>
+        <li>📈 Graphiques</li>
+      </ul>
+      <div class="export-btn-container">
+        <button onclick="exportPDF()">📄 Exporter le rapport PDF</button>
+      </div>
+    </aside>
+  
+    <div class="content">
+      <button id="toggleCesiumBtn" onclick="toggleCesium()">🌍 Basculer en 3D</button>
+      <div id="map"></div>
+      <!-- Fiche dynamique contextuelle -->
+<div id="ficheObservatoire" class="fiche-observatoire" style="display: none;">
+  <h3>🛰️ Fiche Observatoire</h3>
+  <p><strong>Nom :</strong> <span id="fiche-nom">-</span></p>
+  <p><strong>Type :</strong> <span id="fiche-type">-</span></p>
+  <p><strong>Année :</strong> <span id="fiche-annee">-</span></p>
+  <p><strong>Source :</strong> <span id="fiche-source">-</span></p>
+  <p><strong>Statut :</strong> <span id="fiche-statut">-</span></p>
+</div>
+      <div id="cesiumLayers" style="display:none;">
+        <h4>🛰️ Couches 3D</h4>
+        <label>
+          <input type="checkbox" id="toggleGNSS" checked />
+          <span style="color: #0ea5e9;">📍 GNSS / Borne géodésique</span>
+        </label><br>
+        <label>
+          <input type="checkbox" id="toggleEau" />
+          <span style="color: #22d3ee;">💧 Réseaux d’eau</span>
+        </label><br>
+        <label>
+          <input type="checkbox" id="toggleUrbanisme" />
+          <span style="color: #fbbf24;">🏙️ Zones urbaines</span>
+        </label>
+      </div>
+      <div class="legend">
+        Zone à risque : 🔵 Nappes phréatiques, 🔴 Milieux à risque, 🟡 Friches urbaines
+      </div>
+
+      <div class="bottom-row">
+        <div class="filters-box">
+          <h3>Filtrer par région</h3>
+<select id="filtreRegion" onchange="filtrerParRegion()">
+  <option value="all">🌍 Toutes les régions</option>
+  <option value="nord">Nord</option>
+  <option value="sud">Sud</option>
+  <option value="est">Est</option>
+  <option value="ouest">Ouest</option>
+</select>
+          <h3>Filtres par année</h3>
+          <button onclick="filterByYear('2013')">2013</button>
+          <button onclick="filterByYear('2019')">2019</button>
+          <button onclick="filterByYear('2020')">2020</button>
+          <button onclick="filterByYear('2022')">2022</button>
+          <button onclick="resetChart()">Réinitialiser</button>
+        </div>
+      
+        <div class="dashboard-boxes">
+          <div class="dashboard-box">
+            <div class="percentage"><span id="val-stress">55</span>%</div>
+            <div class="label">Stress hydrique</div>
+          </div>
+          <div class="dashboard-box">
+            <div class="percentage"><span id="val-foret">67</span>%</div>
+            <div class="label">Couverture forestière</div>
+          </div>
+          <div class="dashboard-box">
+            <div class="percentage"><span id="val-urbain">32</span>%</div>
+            <div class="label">Croissance urbaine</div>
+          </div>
+        </div>
+      
+        <div class="chart-box">
+          <canvas id="lineChart"></canvas>
+        </div>
+      </div>
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([10.5, 15], 3);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '© Esri, Tiles'
+    }).addTo(map);
+
+    L.circleMarker([11.5, 15.5], {radius: 8, color: 'blue', fillOpacity: 0.7}).addTo(map);
+    const bluePoint = L.circleMarker([11.5, 15.5], {
+  radius: 8, color: 'blue', fillOpacity: 0.7
+}).addTo(map);
+
+bluePoint.feature = {
+  properties: {
+    name: "Station NDVI Nord",
+    type: "GNSS",
+    annee: "2022",
+    source: "Copernicus",
+    statut: "Actif",
+    region: "nord"   // ✅ <- C’est ça qu'on ajoute
+  }
+};
+bluePoint.on('click', function () {
+  afficherFicheObservatoire(bluePoint.feature);
+});
+    L.circleMarker([9.5, 14], {radius: 8, color: 'red', fillOpacity: 0.7}).addTo(map);
+    const redPoint = L.circleMarker([9.5, 14], {
+  radius: 8, color: 'red', fillOpacity: 0.7
+}).addTo(map);
+
+redPoint.feature = {
+  properties: {
+    name: "Zone à risque Est",
+    type: "Observation",
+    annee: "2020",
+    source: "Projet Climat-Td",
+    statut: "Sous surveillance",
+    region: "est"
+  }
+};
+redPoint.on('click', function () {
+  orangePoint.feature = {
+  properties: {
+    name: "Friches urbaines Ouest",
+    type: "Observation",
+    annee: "2021",
+    source: "Projet Urbain",
+    statut: "Latent",
+    region: "ouest"
+  }
+};
+  afficherFicheObservatoire(redPoint.feature);
+});
+    L.circleMarker([10, 17.5], {radius: 8, color: 'orange', fillOpacity: 0.7}).addTo(map);
+    const sentinelNDVI = L.tileLayer.wms(
+  'https://services.sentinel-hub.com/ogc/wms/3e55d54e-5c7c-45f0-95e7-e554e7a42b05',
+  {
+    layers: 'NDVI',
+    format: 'image/png',
+    transparent: true,
+    attribution: 'Sentinel-2 NDVI – SentinelHub (example)',
+    maxcc: 20,
+    time: '2023-06-01/2023-06-30',
+    tilematrixset: 'WGS84',
+  }
+).addTo(map);
+
+// Contrôle d'affichage dynamique
+document.getElementById('toggleSentinel').addEventListener('change', function () {
+  if (this.checked) {
+    map.addLayer(sentinelNDVI);
+  } else {
+    map.removeLayer(sentinelNDVI);
+  }
+});
+sentinelNDVI.addTo(map);
+    const ctx = document.getElementById('lineChart').getContext('2d');
+    const indicateursData = {
+  "2013": {
+    stress: 43,
+    foret: 62,
+    urbain: 25
+  },
+  "2019": {
+    stress: 50,
+    foret: 65,
+    urbain: 28
+  },
+  "2020": {
+    stress: 52,
+    foret: 66,
+    urbain: 30
+  },
+  "2022": {
+    stress: 55,
+    foret: 67,
+    urbain: 32
+  },
+  "all": {
+    stress: 55,
+    foret: 67,
+    urbain: 32
+  }
+};
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['2013', '2019', '2020', '2022'],
+        datasets: [
+          {
+            label: '🌾 Terres cultivées',
+            data: [50, 60, 70, 80],
+            borderColor: '#38bdf8',
+            fill: false
+          },
+          {
+            label: '🔥 Sécheresses',
+            data: [20, 30, 40, 55],
+            borderColor: '#f87171',
+            fill: false
+          },
+          {
+            label: '👥 Population',
+            data: [30, 35, 40, 50],
+            borderColor: '#c084fc',
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            labels: {
+              color: '#e2e8f0'
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#e2e8f0' }
+          },
+          y: {
+            ticks: { color: '#e2e8f0' }
+          }
+        }
+      }
+    });
+
+    function filterByYear(year) {
+  const labels = ['2013', '2019', '2020', '2022'];
+  const index = labels.indexOf(year);
+  if (index !== -1) {
+    chart.data.labels = [year];
+    chart.data.datasets[0].data = [indicDataChart['terres'][index]];
+    chart.data.datasets[1].data = [indicDataChart['secheresses'][index]];
+    chart.data.datasets[2].data = [indicDataChart['population'][index]];
+    chart.update();
+    majIndicateurs(year);
+
+    // Met à jour les styles des boutons
+    document.querySelectorAll('.filters-box button').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+  }
+}
+function resetChart() {
+  chart.data.labels = ['2013', '2019', '2020', '2022'];
+  chart.data.datasets[0].data = [50, 60, 70, 80];   // Terres cultivées
+  chart.data.datasets[1].data = [20, 30, 40, 55];   // Sécheresses
+  chart.data.datasets[2].data = [30, 35, 40, 50];   // Population
+  chart.update();
+  majIndicateurs("all");
+
+  // Retirer l'effet actif des boutons
+  document.querySelectorAll('.filters-box button').forEach(btn => btn.classList.remove('active'));
+}
+    function majIndicateurs(annee) {
+  const data = indicateursData[annee];
+  document.getElementById('val-stress').textContent = data.stress;
+  document.getElementById('val-foret').textContent = data.foret;
+  document.getElementById('val-urbain').textContent = data.urbain;
+}
+  </script>
+  <script>
+    async function exportPDF() {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF();
+  
+      // Titre
+      pdf.setFontSize(18);
+      pdf.text("Rapport GEO-SOVEREIGN", 20, 20);
+      const date = new Date().toLocaleDateString('fr-FR');
+      pdf.text(`Date : ${date}`, 20, 30);
+      // Indicateurs
+      pdf.setFontSize(12);
+      pdf.text("📊 Stress hydrique : 55%", 20, 40);
+      pdf.text("🌲 Couverture forestière : 67%", 20, 50);
+      pdf.text("🏙️ Croissance urbaine : 32%", 20, 60);
+  
+      // Capture du graphique
+      const canvas = document.getElementById('lineChart');
+      const imageData = canvas.toDataURL("image/png", 1.0);
+      pdf.addImage(imageData, 'PNG', 15, 75, 180, 80);
+  
+      // Télécharger le PDF
+      pdf.save("rapport_GEO-SOVEREIGN.pdf");
+    }
+    const indicDataChart = {
+  terres: [50, 60, 70, 80],
+  secheresses: [20, 30, 40, 55],
+  population: [30, 35, 40, 50]
+};
+  </script>
+  <script>
+    let viewerCesium = null;
+    let cesiumActive = false;
+  
+    function toggleCesium() {
+      const leafletMap = document.getElementById('map');
+      const cesiumDiv = document.getElementById('cesiumContainer');
+  
+      if (!cesiumActive) {
+        leafletMap.style.display = "none";
+        cesiumDiv.style.display = "block";
+  
+        if (!viewerCesium) {
+          // Initialisation
+          Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI...'; // ← tu peux créer un token Cesium si besoin
+          viewerCesium = new Cesium.Viewer('cesiumContainer', {
+            timeline: false,
+            animation: false,
+            baseLayerPicker: true,
+            terrainProvider: Cesium.createWorldTerrain()
+          });
+          
+  // Exemple d’ajout d’une couche GeoJSON dans Cesium
+const gnssLayer = Cesium.GeoJsonDataSource.load('chemin/vers/ton_fichier.geojson', {
+  stroke: Cesium.Color.CYAN,
+  fill: Cesium.Color.CYAN.withAlpha(0.5),
+  strokeWidth: 2,
+  markerSymbol: '?'
+});
+
+gnssLayer.then(function (dataSource) {
+  viewerCesium.dataSources.add(dataSource);
+  viewerCesium.flyTo(dataSource);
+});
+          // Centrer sur ton projet (ex. autour du Tchad)
+          viewerCesium.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(15, 10.5, 5000000)
+          });
+        }
+        cesiumActive = true;
+      } else {
+        // Revenir à Leaflet
+        leafletMap.style.display = "block";
+        cesiumDiv.style.display = "none";
+        cesiumActive = false;
+      }
+    }
+    
+  </script>
+  <script>
+    fetch("GEO_SOVEREIGN_exemple.geojson")
+      .then(response => response.json())
+      .then(data => {
+        const geojsonLayer = L.geoJSON(data, {
+          style: function (feature) {
+            if (feature.geometry.type === 'Polygon') {
+              return { color: "#38bdf8", fillOpacity: 0.2 };
+            } else if (feature.geometry.type === 'LineString') {
+              return { color: "#facc15", weight: 3 };
+            }
+          },
+          pointToLayer: function (feature, latlng) {
+            return L.circleMarker(latlng, {
+              radius: 8,
+              fillColor: "#f87171",
+              color: "#fff",
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.9
+            }).bindPopup(`<strong>${feature.properties.name}</strong>`);
+          },
+          onEachFeature: function (feature, layer) {
+  // On ajoute des infos fictives pour tester la fiche
+  feature.properties.name = feature.properties.name || "Point GNSS A";
+  feature.properties.type = feature.properties.type || "GNSS";
+  feature.properties.annee = feature.properties.annee || "2023";
+  feature.properties.source = feature.properties.source || "Programme Copernicus";
+  feature.properties.statut = feature.properties.statut || "Actif";
+
+  layer.bindPopup(`<strong>${feature.properties.name}</strong>`);
+  layer.on('click', function () {
+    afficherFicheObservatoire(feature);
+  });
+}
+        }).addTo(map);
+      });
+  </script>
+  <script>
+    let gnssLayerSource = null;
+  
+    // Charger la couche GNSS au lancement de Cesium
+    function loadGNSSLayer() {
+      Cesium.GeoJsonDataSource.load('GEO_SOVEREIGN_exemple.geojson', {
+        stroke: Cesium.Color.CYAN,
+        fill: Cesium.Color.CYAN.withAlpha(0.5),
+        strokeWidth: 2
+      }).then(dataSource => {
+        gnssLayerSource = dataSource;
+        viewerCesium.dataSources.add(dataSource);
+      });
+    }
+  
+    // Contrôle checkbox GNSS
+    document.getElementById('toggleGeoJSON').addEventListener('change', function () {
+      if (!gnssLayerSource) return;
+      if (this.checked) {
+        viewerCesium.dataSources.add(gnssLayerSource);
+      } else {
+        viewerCesium.dataSources.remove(gnssLayerSource);
+      }
+    });
+    let layersCesium = {
+  gnss: null,
+  eau: null,
+  urbanisme: null
+};
+
+// Fonction générique pour charger une couche GeoJSON
+function loadLayer(id, path, color) {
+  return Cesium.GeoJsonDataSource.load(path, {
+    stroke: color,
+    fill: color.withAlpha(0.5),
+    strokeWidth: 2
+  }).then(dataSource => {
+    layersCesium[id] = dataSource;
+    viewerCesium.dataSources.add(dataSource);
+  });
+}
+document.getElementById('toggleGNSS').addEventListener('change', function () {
+  if (this.checked && layersCesium.gnss) {
+    viewerCesium.dataSources.add(layersCesium.gnss);
+  } else if (layersCesium.gnss) {
+    viewerCesium.dataSources.remove(layersCesium.gnss);
+  }
+});
+function afficherFicheObservatoire(feature) {
+  document.getElementById('fiche-nom').textContent = feature.properties.name || 'Non défini';
+  document.getElementById('fiche-type').textContent = feature.properties.type || 'Inconnu';
+  document.getElementById('fiche-annee').textContent = feature.properties.annee || 'Non précisée';
+  document.getElementById('fiche-source').textContent = feature.properties.source || 'N/A';
+  document.getElementById('fiche-statut').textContent = feature.properties.statut || 'N/A';
+  document.getElementById('ficheObservatoire').style.display = 'block';
+}
+  </script>
+  <script>
+    const dateElem = document.getElementById("currentDate");
+    const now = new Date();
+    const formatted = now.toLocaleDateString('fr-FR', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    dateElem.textContent = formatted;
+  </script>
+</body>
+</html>
