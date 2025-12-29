@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GEO-SOVEREIGN — Zakouma</title>
+<!-- Leaflet + Chart.js -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- GeoTIFF / GeoRaster / Layer (UNE SEULE PILE, ordre important) -->
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.0.7/dist-browser/geotiff.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/georaster@1.7.1/dist/georaster.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.9.0/dist/georaster-layer-for-leaflet.min.js"></script>
+
+<!-- CesiumJS -->
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+<!-- Leaflet & Chart.js -->
+<script>
+  console.log('GeoTIFF loaded?', !!(window.GeoTIFF || window.geotiff));
+</script>
+<!-- jsPDF (ok) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    /* --- Bascule 2D/3D pilotée par une classe sur <body> --- */
+body:not(.is-3d) #map{ display:block; }
+body:not(.is-3d) #cesiumContainer{ display:none; }
+
+body.is-3d #map{ display:none; }
+body.is-3d #cesiumContainer{ display:block; }
+
+/* S'assure que les deux prennent tout l'espace */
+#map, #cesiumContainer{
+  position:absolute; inset:0; width:100%; height:100%;
+}
+    :root { --bg:#0f172a; --panel:#1e293b; --panel-2:#334155; --txt:#e2e8f0; --muted:#94a3b8; --brand:#38bdf8; }
+    * { box-sizing: border-box; }
+    body { background:var(--bg); color:var(--txt); display:flex; flex-direction:column; height:100vh; overflow:hidden; margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial; }
+    header { background:var(--bg); padding:12px 20px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--panel); }
+    .header-left { display:flex; align-items:center; gap:12px; }
+    .logo-flag { width:90px; border-radius:6px; }
+    .logo-observatoire h1 { color:var(--brand); font-size:22px; margin:0 0 2px; }
+    .logo-observatoire .subtitle { font-size:12px; color:var(--muted); }
+    .header-right { text-align:right; font-size:12px; color:var(--muted); }
+    .status { color:#4ade80; font-weight:700; display:block; }
+  
+    .main { display:flex; flex:1; overflow:hidden; position:relative; height: calc(100vh - 64px); }
+  
+    .sidebar { width:320px; background:var(--panel); padding:18px; overflow-y:auto; transition: width .3s ease; }
+    .sidebar.collapsed { width: 60px; }
+    .sidebar h2 { font-size:15px; color:#60a5fa; margin:10px 0 6px; }
+    .group { background:var(--panel-2); padding:10px; border-radius:10px; margin-bottom:10px; }
+    .group label { display:flex; gap:8px; align-items:center; margin:6px 0; font-size:14px; }
+    .export-btn-container button, .sidebar button { width:100%; background: var(--panel-2); color: var(--txt); border:none; border-radius:6px; padding:8px 12px; cursor:pointer; }
+  
+    #toggleSidebarBtn { position: fixed; top: 80px; left: 10px; z-index: 1100; background: var(--panel); color: var(--txt); border: none; padding: 8px 12px; border-radius: 6px; font-size: 20px; cursor:pointer; box-shadow:0 0 6px rgba(0,0,0,.3); }
+  
+    /* === Zone centrale : ligne 1 = carte/globe, ligne 2 = dashboard === */
+    .content{
+  flex: 1;                     /* prend toute la place à droite de la sidebar */
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0,1fr) auto;
+  gap: 8px;
+  padding: 0;
+  overflow: hidden;
+}
+  
+    /* Boîte contenant la carte et le globe en plein */
+/* === Zone centrale : 1 = carte/globe (plein), 2 = dashboard (fixe) === */
+.content{
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr 220px;   /* ↑ Carte/globe prend tout, dashboard 220px seulement */
+  gap: 8px;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Carte / Globe */
+.viewport{
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b1222;
+}
+.viewport #map,
+.viewport #cesiumContainer{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Cesium 100% (important) */
+#cesiumContainer,
+#cesiumContainer .cesium-viewer,
+#cesiumContainer .cesium-widget,
+#cesiumContainer canvas{
+  width:100% !important;
+  height:100% !important;
+  display:block;
+}
+
+/* 3D cachée par défaut */
+#cesiumContainer{ display:none; }
+
+/* Bande d’infos compacte (hors grille) */
+#infosGeoTechCompact{
+  position: fixed;
+  left: 16px;
+  bottom: 10px;
+  z-index: 1200;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+/* Overlays sur la carte */
+.map-overlays{
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1200;
+  display: flex;
+  gap: 12px;
+  background: rgba(30,41,59,.85);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-2);
+}
+.map-overlays label{
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+/* Bouton flottant */
+.btn-float{
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1300;
+  background: var(--panel);
+  color: var(--txt);
+  border: 1px solid var(--panel-2);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+
+/* Dashboard (2e rangée) */
+.bottom-row{
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px,1fr));
+  gap: 8px;
+  overflow: auto;  /* scroll interne si besoin */
+}
+    .bottom-row { grid-row: 2; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 8px; }
+    .filters-box, .dashboard-boxes, .chart-box { background: var(--panel); border-radius:10px; padding: 10px 12px; }
+    .dashboard-boxes { display:flex; flex-direction:column; gap:8px; }
+    .dashboard-box { text-align:center; }
+    .dashboard-box .percentage { font-size: 18px; color:#38bdf8; }
+    .dashboard-box .label { font-size:12px; color:#cbd5e1; }
+   /* ne touche qu’aux canvas des graphiques */
+.chart-box canvas,
+#modalChart canvas {
+  height: 140px !important;
+  width: 100%;
+  background: var(--panel);
+  border-radius: 10px;
+}
+  
+    .leaflet-control-ndvi { background: rgba(30,41,59,.92); color:#e2e8f0; padding:10px 12px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.35); font-size:12px; }
+    .leaflet-control-ndvi h4{ margin:0 0 6px; font-size:13px; color:#60a5fa; }
+    .leaflet-control-ndvi .bar { height:10px; width:180px; border-radius:6px; margin:6px 0; background: linear-gradient(90deg,#440154,#31688e,#35b779,#fde725); }
+    .leaflet-control-ndvi .ticks{ display:flex; justify-content:space-between; opacity:.85; }
+  
+    .fiche-observatoire { position:absolute; top: 90px; right: 20px; width: 300px; background: var(--panel); padding: 14px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,.5); z-index: 1100; display:none; }
+    .fiche-observatoire h3 { margin:0 0 8px; font-size:16px; color: var(--brand); }
+  
+    #cesiumLayers { position: fixed; top: 90px; right: 20px; background: rgba(30,41,59,.9); color: var(--txt); padding: 12px; border-radius: 10px; z-index: 1200; display:none; }
+    #cesiumLayers h4 { margin:0 0 8px; font-size:14px; color:#60a5fa; }
+  
+    #modalChart { display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,.85); z-index: 3000; justify-content:center; align-items:center; }
+    #modalChart .card { position:relative; width:80%; max-width:1000px; }
+    #modalChart .card button { position:absolute; top:10px; right:10px; background:#f87171; border:none; color:#fff; border-radius:6px; padding:6px 10px; cursor:pointer; }
+  
+    @media (max-width: 768px){
+      .main { flex-direction:column; height:auto; }
+      .sidebar { width:100%; order:2; }
+      .content { order:1; }
+    }
+/* --- FIX hauteur carte/globe --- */
+.content{
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr 220px;  /* globe plein écran + dashboard fixe */
+  gap: 8px;
+  overflow: hidden;
+}
+
+.viewport{
+  grid-row: 1 / 2;               /* force la carte/globe en 1ère rangée */
+  height: 100%;
+}
+
+.bottom-row{
+  grid-row: 2 / 3;               /* dashboard en 2e rangée */
+}
+
+/* IMPORTANT : ne doit pas prendre une rangée de la grille */
+#infosGeoTechCompact{
+  position: fixed;                /* le sortir du flux de la grille */
+  left: 12px;
+  bottom: 8px;
+  z-index: 1100;
+}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <img src="logo-observatoire.png" alt="Logo GEO-SOVEREIGN" class="logo-flag" />
+      <div class="logo-observatoire">
+        <h1>GEO-SOVEREIGN</h1>
+        <span class="subtitle">Observatoire Spatial National 🇹🇩 — Focus Zakouma</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="status">🟢 En ligne</span>
+      <span class="date" id="currentDate"></span>
+    </div>
+  </header>
+
+  <div class="main">
+    <button id="toggleSidebarBtn" onclick="toggleSidebar()">☰</button>
+
+    <aside class="sidebar">
+        <h2>Navigation par thème</h2>
+        <div class="group">
+          <select onchange="changerTheme(this.value)" style="width:100%; padding:6px; border-radius:6px; background: var(--panel-2); color: var(--txt)">
+            <option value="">— Choisir —</option>
+            <optgroup label="🌿 Végétation"><option value="veg">NDVI / VCI / VHI</option></optgroup>
+            <optgroup label="💧 Eau"><option value="eau">Hydrologie (JRC / Sentinel-1)</option></optgroup>
+            <optgroup label="🐘 Faune"><option value="faune">Corridors & Pistes</option></optgroup>
+            <optgroup label="🔥 Risques"><option value="risques">Feux & Sécheresse</option></optgroup>
+            <optgroup label="🏛️ Anthropique"><option value="anthro">Routes & Agriculture</option></optgroup>
+            <optgroup label="🌿 Aires protégées"><option value="zakouma">Parc Zakouma</option></optgroup>
+          </select>
+        </div>
+      
+        <h2>🛰️ Imagerie & Indices</h2>
+        <div class="group">
+          <label><input type="checkbox" id="toggleBaseImagery" checked /> ESRI World Imagery</label>
+          <label><input type="checkbox" id="toggleNDVI" checked /> NDVI</label>
+          <label><input type="checkbox" id="toggleVCI" /> VCI</label>
+          <label><input type="checkbox" id="toggleVHI" /> VHI</label>
+          <label><input type="checkbox" id="toggleNDVICalc" /> NDVI (calculé B04/B08)</label>
+          <label>
+            <input type="checkbox" id="toggleGoogle3D" />
+            🌍 Google Photorealistic 3D
+          </label>
+        </div>
+      
+        <h2>💧 Hydrologie</h2>
+        <div class="group">
+          <label><input type="checkbox" id="toggleSoilMoisture" /> Humidité des sols</label>
+          <label><input type="checkbox" id="toggleSurfaceWater" /> Eaux de surface (JRC)</label>
+          <label><input type="checkbox" id="toggleFlood" /> Inondations (Sentinel-1)</label>
+          <label><input type="checkbox" id="toggleWaterPoints" /> Points d’eau</label>
+        </div>
+      
+        <h2>🐘 Faune & Connectivité</h2>
+        <div class="group">
+          <label><input type="checkbox" id="toggleBoundary" checked /> Limite Zakouma</label>
+          <label><input type="checkbox" id="toggleCorridors" /> Corridors écologiques</label>
+          <label><input type="checkbox" id="toggleTracks" /> Pistes / Patrol</label>
+        </div>
+      
+        <h2>🔥 Risques climatiques</h2>
+        <div class="group">
+          <label><input type="checkbox" id="toggleFires" /> Feux actifs (FIRMS)</label>
+          <div id="firesControls" style="margin-left:20px; display:none;">
+            Période :
+            <select id="firesWindow">
+              <option value="24">24 h</option><option value="48">48 h</option><option value="168">7 jours</option>
+            </select>
+          </div>
+          <label><input type="checkbox" id="toggleSPI" /> SPI (sécheresse)</label>
+          <label><input type="checkbox" id="toggleLST" /> Anomalies LST</label>
+        </div>
+      
+        <h2>🏛️ Pressions anthropiques</h2>
+        <div class="group">
+          <label><input type="checkbox" id="toggleRoads" /> Routes OSM</label>
+          <label><input type="checkbox" id="toggleAgri" /> Expansion agricole</label>
+        </div>
+      
+        <div class="export-btn-container">
+          <button onclick="exportPDF()">📄 Exporter le rapport PDF</button>
+        </div>
+        <div style="margin-top:8px;">
+          <button onclick="toggleTraitement()">🧪 Traitement scientifique</button>
+        </div>
+      </aside>
+      <div class="content">
+        <!-- Rangée 1 : carte / globe -->
+        <div class="viewport">
+          <div id="map"></div>
+          <div id="cesiumContainer"></div>
+      
+          <!-- Overlays de la carte -->
+          <div class="map-overlays">
+            <label><input type="checkbox" id="togglePointCloud" /> 🌐 Nuage de points (drone)</label>
+            <label><input type="checkbox" id="toggleTerrainCustom" /> 🗻 Terrain MNT (ion)</label>
+            <label><input type="checkbox" id="toggleBuildings3D" /> 🏙️ Bâtiments 3D (OSM)</label>
+<label><input type="checkbox" id="toggleTrees3D" /> 🌳 Arbres 3D (demo)</label>
+          </div>
+      
+          <!-- Bouton 2D/3D (peut rester fixed) -->
+          <button id="btnToggle3DFixed" class="btn-float">🌍 2D / 3D</button>
+        </div>
+      
+        <!-- Rangée 2 : dashboard -->
+        <div class="bottom-row">
+          <div class="filters-box">
+            <h3>Filtrer par région</h3>
+            <select id="filtreRegion" onchange="filtrerParRegion(this.value)">
+              <option value="all">🌍 Toutes les régions</option>
+              <option value="nord">Nord</option>
+              <option value="sud">Sud</option>
+              <option value="est">Est</option>
+              <option value="ouest">Ouest</option>
+            </select>
+            <h3 style="margin-top:10px;">Filtres par année</h3>
+            <div>
+              <button onclick="filterByYear(event,'2013')">2013</button>
+              <button onclick="filterByYear(event,'2019')">2019</button>
+              <button onclick="filterByYear(event,'2020')">2020</button>
+              <button onclick="filterByYear(event,'2022')">2022</button>
+              <button onclick="resetChart()">Réinitialiser</button>
+            </div>
+          </div>
+      
+          <div class="dashboard-boxes">
+            <div class="dashboard-box"><div class="percentage"><span id="val-stress">55</span>%</div><div class="label">Stress hydrique</div></div>
+            <div class="dashboard-box"><div class="percentage"><span id="val-foret">67</span>%</div><div class="label">Couverture forestière</div></div>
+            <div class="dashboard-box"><div class="percentage"><span id="val-urbain">32</span>%</div><div class="label">Croissance urbaine</div></div>
+          </div>
+      
+          <div class="chart-box" style="display:flex; flex-direction:column;">
+            <canvas id="lineChart"></canvas>
+            <button onclick="ouvrirGraphiqueZoom()" style="margin-top:10px; align-self:flex-end;">🔎 Voir en grand</button>
+          </div>
+        </div>
+      </div>
+
+  <!-- Interface Traitement -->
+  <div id="interfaceTraitement" style="display:none; position:absolute; top:60px; right:0; width:300px; background:#fff; color:#111; border-left:2px solid #ccc; padding:15px; z-index:2000;">
+    <h3>Interface de Traitement</h3>
+    <label for="typeRendu">Choisir un type de rendu :</label>
+    <select id="typeRendu" onchange="changerRendu()" style="width:100%; margin-top:10px;">
+      <option value="mnt">🌄 MNT – Terrain</option>
+      <option value="mns">🏙️ MNS – Surface</option>
+      <option value="canopée">🌳 Canopée</option>
+      <option value="ndvi">🌿 NDVI</option>
+      <option value="pente">🧭 Pente</option>
+      <option value="exposition">🧭 Exposition</option>
+      <option value="ombrage">☀️ Ombrage</option>
+    </select>
+    <div id="vueRendu3D" style="margin-top:15px;">
+      <p><i>Rendu 3D ou raster s'affichera ici.</i></p>
+    </div>
+  </div>
+
+  <!-- =================== SCRIPT =================== -->
+  <script>
+// --- coupe-circuits Google 3D (tout en haut) ---
+window.ENABLE_GOOGLE_3D = true;                 // laisse false
+window.GOOGLE_MAPS_API_KEY = "AIzaSyBIkHrWrzrai7ab8a69qYygPTiTEw_h4zk";                 // clé si test local
+window.SAFE_HOSTS = new Set(["localhost","127.0.0.1"]);
+// ===== Cesium ion (auth) =====
+const ION_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmYTJjYWUwYy1iODlkLTRjOTQtYWJhMi1jOGU5ZTM0Mzc4NTEiLCJpZCI6MzM2NzY5LCJpYXQiOjE3NTY1ODMyMzd9.mwK2P0DOCN0cq8L0e3awjk-j8Y-mBCO46i4MXMY2j4E";
+Cesium.Ion.defaultAccessToken = ION_TOKEN;
+// --- coupe-circuits Google 3D (tout en haut) ---
+/* ============================================================
+   DEV AIDE & DATE HEADER
+============================================================ */
+(function(){
+  if (location.protocol === 'file:'){
+    const b=document.createElement('div');
+    b.className='dev-banner';
+    b.innerHTML='⚠️ Ouverture en <b>file://</b>. Les <code>fetch()</code> sont bloqués. Lance un serveur local (ex. <code>python3 -m http.server 5500</code>) puis ouvre <code>http://localhost:5500/</code>. Données de démo activées.';
+    document.addEventListener('DOMContentLoaded',()=>{document.body.appendChild(b); b.style.display='block';});
+  }
+})();
+(function(){ const e=document.getElementById('currentDate'); const now=new Date();
+  e.textContent = now.toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'}); })();
+
+/* ============================================================
+   LEAFLET INIT + HELPERS
+============================================================ */
+// --- BOOT: attendre les libs GeoTIFF / GeoRaster / GeoRasterLayer ---
+console.error("[timeout] GeoTIFF:", !!(window.GeoTIFF||window.geotiff),
+              "GeoRaster:", !!(window.parseGeoraster || (window.georaster && window.georaster.parse)),
+              "GeoRasterLayer:", !!(window.GeoRasterLayer || (window.L && window.L.GeoRasterLayer)));
+async function waitForLibs(){
+  function hasGeoTIFF(){
+    return !!(window.GeoTIFF || window.geotiff);
+  }
+  function hasGeoRaster(){
+    return !!(window.parseGeoraster || (window.georaster && window.georaster.parse));
+  }
+  function hasGeoRasterLayer(){
+    return !!(window.GeoRasterLayer || (window.L && window.L.GeoRasterLayer));
+  }
+
+  const deadline = Date.now() + 10000;
+
+  while (true){
+    const ok = hasGeoTIFF() && hasGeoRaster() && hasGeoRasterLayer();
+
+    // 🔎 log de diagnostic (tu peux les laisser)
+    console.log("[libs] GeoTIFF:", hasGeoTIFF(),
+                "GeoRaster:", hasGeoRaster(),
+                "GeoRasterLayer:", hasGeoRasterLayer());
+
+    if (ok) return;
+
+    if (Date.now() > deadline){
+      console.error("[timeout] GeoTIFF:", hasGeoTIFF(),
+                    "GeoRaster:", hasGeoRaster(),
+                    "GeoRasterLayer:", hasGeoRasterLayer());
+      throw new Error("Libs GeoTIFF/GeoRaster non chargées");
+    }
+    await new Promise(r => setTimeout(r, 50));
+  }
+}
+async function safeFetchJson(path){
+  if (location.protocol === 'file:') return null;
+  const r = await fetch(path);
+  if (!r.ok) throw new Error('HTTP '+r.status);
+  return await r.json();
+}
+// remplace ton (async function init(){ ... }) par :
+document.addEventListener('DOMContentLoaded', async () => {
+  try{
+    await waitForLibs();
+    await init();
+  }catch(e){
+    console.error(e);
+    alert("Les bibliothèques GeoTIFF/GeoRaster ne se sont pas chargées. Vérifie les balises <script> dans <head>.");
+  }
+});
+const ZAKOUMA_CENTER=[10.97,19.90], ZAKOUMA_ZOOM=9, ZAKOUMA_BOUNDS=[[10.6,19.3],[11.3,20.2]];
+const NDVI_COG_URL = 'data/zakouma_ndvi_cog.tif';      // NDVI prêt-à-lire (optionnel)
+const COG_RED_URL  = 'data/S2_B04_red.tif';            // ⚠️ remplace par ta bande rouge
+const COG_NIR_URL  = 'data/S2_B08_nir.tif';            // ⚠️ remplace par ta bande NIR
+const DEM_MNT_URL  = 'data/zakouma_dem_mnt.tif';       // ⚠️ remplace par ton MNT GeoTIFF
+// === Sentinel-2 COGs pour NDVI calculé (remplace avec tes URLs réelles)
+const S2_B04_COG_URL = 'data/S2_B04_cog.tif'; // Rouge
+const S2_B08_COG_URL = 'data/S2_B08_cog.tif'; // NIR
+// ========= GOOGLE 3D – coupe-circuits =========
+  /*// Charge en 3D
+  if (!viewerCesium) ensureCesium();
+  try{
+    if (!layersCesium.google3DTiles){
+      const tiles = await Cesium.createGooglePhotorealistic3DTileset(GOOGLE_MAPS_API_KEY);
+      layersCesium.google3DTiles = viewerCesium.scene.primitives.add(tiles);
+      await tiles.readyPromise;
+      viewerCesium.zoomTo(tiles);
+      viewerCesium.scene.requestRender?.();
+    }
+  }catch(e){
+    console.error("Erreur Google 3D Tiles:", e);
+    alert("Impossible de charger les tuiles 3D Google (voir console).");
+    if (chk) chk.checked = false;
+  }
+*/
+// Wiring de la case (à côté des autres listeners)
+ /*{
+ const chkGoogle3D = document.getElementById('toggleGoogle3D');
+  // Cache l’option si ce n’est pas un hôte sûr
+  if (chkGoogle3D && !SAFE_HOSTS.has(location.hostname)){
+    chkGoogle3D.closest('label')?.remove();
+  } else if (chkGoogle3D){
+    chkGoogle3D.addEventListener('change', e => {
+      if (!cesiumActive) toggleCesium();        // ouvre la 3D si fermée
+      toggleGoogle3DTiles(e.target.checked);
+    });
+  }
+}*/
+/* Carte Leaflet */
+const map = L.map('map', { center: [12.1348, 15.0557], zoom: 7, worldCopyJump: true });
+const esriImagery = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution:'© Esri, Tiles', noWrap:true }
+).addTo(map);
+requestAnimationFrame(() => map.invalidateSize());
+setTimeout(() => map.invalidateSize(), 250);
+window.addEventListener('resize', () => map.invalidateSize());
+// après esriImagery.addTo(map);
+document.getElementById('toggleBaseImagery').addEventListener('change', function(){
+  if (this.checked) map.addLayer(esriImagery); else map.removeLayer(esriImagery);
+});
+
+/* Styles utilitaires */
+function stylePolyline(color='#22d3ee', weight=2){ return { color, weight }; }
+function stylePolygon(color='#22c55e', weight=1, fillOpacity=0.25){ return { color, weight, fillOpacity }; }
+function pointCircle(color='#0ea5e9', radius=6){ return { radius, color, fillOpacity:.85 }; }
+
+/* Fallbacks DEMO */
+const DEMO_BOUNDARY = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Parc national de Zakouma","source":"GEO-SOV","year":2024},"geometry":{"type":"Polygon","coordinates":[[[19.35,10.7],[20.1,10.7],[20.1,11.25],[19.35,11.25],[19.35,10.7]]]}}]};
+const DEMO_WATERPTS = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Mare Fada","type":"Mare"},"geometry":{"type":"Point","coordinates":[19.85,10.95]}},{"type":"Feature","properties":{"name":"Forage Kach","type":"Forage"},"geometry":{"type":"Point","coordinates":[19.62,11.10]}}]};
+const DEMO_TRACKS   = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Patrol Nord"},"geometry":{"type":"LineString","coordinates":[[19.5,11.2],[19.8,11.1],[19.95,11.0]]}},{"type":"Feature","properties":{"name":"Patrol Sud"},"geometry":{"type":"LineString","coordinates":[[19.4,10.8],[19.6,10.9],[19.9,10.9]]}}]};
+const DEMO_CORRID   = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Corridor Nord-Est"},"geometry":{"type":"LineString","coordinates":[[19.8,11.1],[20.2,11.3]]}}]};
+const DEMO_NDVI_CHG = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ndvi_change":"hausse","valeur_diff":0.27},"geometry":{"type":"Polygon","coordinates":[[[19.5,11.0],[19.7,11.0],[19.7,11.2],[19.5,11.2],[19.5,11.0]]]}}]} ;
+// ===== Cesium ion (remplace par tes vrais IDs quand tu auras importé tes données)
+const ION_POINTCLOUD_ASSET_ID = 96188; // Ex: "NYC Buildings" public (démo)
+const ION_TERRAIN_ASSET_ID    = 1;     // Cesium World Terrain (démo)
+// étend l'objet existant
+let viewerCesium = null;
+let cesiumActive = false;
+const layersCesium = {
+  gnss: null,
+  eau: null,
+  urbanisme: null,
+  pointCloud: null,
+  terrainCustom: null,
+  buildingsOSM: null,
+  treesDemo: null,
+  google3DTiles: null   // ← ajouté
+};
+async function togglePointCloudCesium(on = true){
+  // OFF -> on retire si présent
+  if (!on) {
+    if (layersCesium.pointCloud && viewerCesium) {
+      viewerCesium.scene.primitives.remove(layersCesium.pointCloud);
+      layersCesium.pointCloud = null;
+      viewerCesium.scene.requestRender?.();
+    }
+    return;
+  }
+
+  // ON -> on ajoute si pas déjà là
+  if (!viewerCesium) ensureCesium();
+  if (layersCesium.pointCloud) return; // déjà chargé
+
+  try {
+    const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(ION_POINTCLOUD_ASSET_ID);
+    layersCesium.pointCloud = viewerCesium.scene.primitives.add(tileset);
+    await tileset.readyPromise;
+
+    // améliore la lecture de profondeur sur nuage de points
+    if (tileset.pointCloudShading){
+      tileset.pointCloudShading.attenuation = true;
+      tileset.pointCloudShading.eyeDomeLighting = true;
+    }
+
+    viewerCesium.zoomTo(tileset);
+    viewerCesium.scene.requestRender?.();
+
+  } catch (e) {
+    console.error('Point cloud ion:', e);
+    // rollback UI
+    const cb = document.getElementById('togglePointCloud');
+    if (cb) cb.checked = false;
+    // (ne pas retirer ici: rien n'a été ajouté si on est dans le catch)
+  }
+}
+
+// Terrain personnalisé depuis Cesium ion
+async function toggleTerrainCesium(on = true){
+  if (!viewerCesium) ensureCesium();
+  try{
+    if (on && !layersCesium.terrainCustom){
+      layersCesium.terrainCustom = await Cesium.CesiumTerrainProvider.fromIonAssetId(ION_TERRAIN_ASSET_ID);
+      viewerCesium.terrainProvider = layersCesium.terrainCustom;
+    }
+    if (!on && layersCesium.terrainCustom){
+      // retour au World Terrain par défaut
+      viewerCesium.terrainProvider = Cesium.Terrain.fromWorldTerrain(); // ✅
+      layersCesium.terrainCustom = null;
+      
+    }
+  }catch(e){ console.error('Terrain ion:', e); alert('Échec chargement terrain (ion).'); }
+}
+/* Registre des couches */
+const LAYERS = {
+  boundary:null, waterPoints:null, tracks:null, corridors:null,
+  ndviVector:null, ndviCog:null, vci:null, vhi:null,
+  soilMoisture:null, surfaceWater:null, flood:null,
+  fires:null, spi:null, lst:null,
+  roads:null, agri:null,
+  ndviCalc:null, demProduct:null
+};
+
+/* NDVI palette & légende */
+let ndviLegendControl = null;
+function getNdviColor(t){
+  const stops=[{p:0.00,c:[0x44,0x01,0x54]},{p:0.33,c:[0x31,0x68,0x8e]},{p:0.66,c:[0x35,0xb7,0x79]},{p:1.00,c:[0xfd,0xe7,0x25]}];
+  for (let i=0;i<stops.length-1;i++){
+    const a=stops[i], b=stops[i+1];
+    if (t>=a.p && t<=b.p){
+      const u=(t-a.p)/(b.p-a.p);
+      const r=Math.round(a.c[0]+u*(b.c[0]-a.c[0]));
+      const g=Math.round(a.c[1]+u*(b.c[1]-a.c[1]));
+      const bch=Math.round(a.c[2]+u*(b.c[2]-a.c[2]));
+      return `rgb(${r},${g},${bch})`;
+    }
+  }
+  const last=stops[stops.length-1].c; return `rgb(${last[0]},${last[1]},${last[2]})`;
+}
+function ensureNdviLegend(){
+  if (ndviLegendControl) return;
+  ndviLegendControl = L.control({ position:'bottomright' });
+  ndviLegendControl.onAdd = function(){
+    const div = L.DomUtil.create('div','leaflet-control-ndvi');
+    div.innerHTML = `<h4>NDVI</h4><div class="bar"></div><div class="ticks"><span>-1.0</span><span>0.0</span><span>+1.0</span></div>`;
+    return div;
+  };
+  ndviLegendControl.addTo(map);
+}
+function removeNdviLegend(){ if (ndviLegendControl){ ndviLegendControl.remove(); ndviLegendControl=null; } }
+
+/* Helpers GeoJSON */
+function addGeoJson(obj, opts={}){ return L.geoJSON(obj, opts).addTo(map); }
+async function loadGeoJson(path, fallback, opts={}){
+  try{ const data = await safeFetchJson(path); return addGeoJson(data||fallback, opts);
+  }catch(e){ console.warn('fallback for', path, e); return addGeoJson(fallback, opts); }
+}
+
+/* ============================================================
+   COUCHES — AIRES PROTÉGÉES & HYDRO
+============================================================ */
+async function toggleBoundary(on=true){
+  if (on && !LAYERS.boundary){
+    LAYERS.boundary = await loadGeoJson('data/zakouma_boundary.geojson', DEMO_BOUNDARY, {
+      style: stylePolygon('#60a5fa',2,0.08),
+      onEachFeature:(f,l)=>l.bindPopup(`<b>${f.properties?.name||'Zakouma'}</b>`)
+    });
+  }
+  if (!on && LAYERS.boundary){ map.removeLayer(LAYERS.boundary); LAYERS.boundary=null; }
+}
+async function toggleWaterPoints(on=true){
+  if (on && !LAYERS.waterPoints){
+    LAYERS.waterPoints = await loadGeoJson('data/zakouma_water.geojson', DEMO_WATERPTS, {
+      pointToLayer:(f,latlng)=>L.circleMarker(latlng, pointCircle('#22d3ee',7)),
+      onEachFeature:(f,l)=>l.bindPopup(`💧 ${f.properties?.name||'Point d’eau'}`)
+    });
+  }
+  if (!on && LAYERS.waterPoints){ map.removeLayer(LAYERS.waterPoints); LAYERS.waterPoints=null; }
+
+}
+
+/* ============================================================
+   VÉGÉTATION — NDVI / VCI / VHI
+============================================================ */
+const NDVI_COG_URL_LOCAL = NDVI_COG_URL; // alias clair
+async function toggleNDVI(on=true){
+  if (on){
+    if (!LAYERS.ndviVector){
+      LAYERS.ndviVector = await loadGeoJson('data/zakouma_ndvi_change.geojson', DEMO_NDVI_CHG, {
+        style: (feat)=>{
+          const ch=feat.properties?.ndvi_change;
+          if (ch==='hausse') return { color: getNdviColor(.75), weight:2, fillOpacity:.25 };
+          if (ch==='baisse') return { color: getNdviColor(.15), weight:2, fillOpacity:.25 };
+          return { color: getNdviColor(.35), weight:1, fillOpacity:.15 };
+        },
+        onEachFeature:(f,l)=>l.bindPopup(`📊 ΔNDVI: ${(Number(f.properties?.valeur_diff)||0).toFixed(2)} (${f.properties?.ndvi_change||'—'})`)
+      });
+    }
+    if (!LAYERS.ndviCog && NDVI_COG_URL_LOCAL){
+      try{
+        const tiff = await GeoTIFF.fromUrl(NDVI_COG_URL_LOCAL);
+        const georaster = await parseGeoraster(tiff);
+        LAYERS.ndviCog = new GeoRasterLayer({
+          georaster, resolution:256, opacity:.75,
+          pixelValuesToColorFn: (values)=>{
+            const v=values?.[0]; if (v===undefined||isNaN(v)) return null;
+            const t=Math.max(0,Math.min(1,(v+1)/2)); return getNdviColor(t);
+          }
+        }).addTo(map);
+      }catch(e){ console.warn('NDVI COG non chargé:', e); }
+    }
+    ensureNdviLegend();
+  }else{
+    if (LAYERS.ndviVector){ map.removeLayer(LAYERS.ndviVector); LAYERS.ndviVector=null; }
+    if (LAYERS.ndviCog){ map.removeLayer(LAYERS.ndviCog); LAYERS.ndviCog=null; }
+    if(!LAYERS.ndviCalc) removeNdviLegend();
+  }
+}
+
+/* === NDVI depuis bandes B04/B08 === */
+async function ndviFromBandsToggle(on=true){
+  if(on){
+    if(!LAYERS.ndviCalc){
+      try{
+        const [tRed,tNir]=await Promise.all([GeoTIFF.fromUrl(COG_RED_URL), GeoTIFF.fromUrl(COG_NIR_URL)]);
+        const [grRed,grNir]=await Promise.all([parseGeoraster(tRed), parseGeoraster(tNir)]);
+        const overlay=await renderNdviFromRasters(grRed,grNir);
+        LAYERS.ndviCalc=overlay.addTo(map);
+        ensureNdviLegend();
+        try{ await updateZonalNdviStats(); }catch(_){}
+      }catch(e){ console.error('NDVI bandes non calculé:',e); }
+    }
+  }else{
+    if(LAYERS.ndviCalc){ map.removeLayer(LAYERS.ndviCalc); LAYERS.ndviCalc=null; }
+    if(!LAYERS.ndviCog && !LAYERS.ndviVector) removeNdviLegend();
+  }
+}
+async function renderNdviFromRasters(grRed,grNir){
+  const red=grRed.values?grRed.values[0]:(grRed.rasters?grRed.rasters[0]:grRed.data[0]);
+  const nir=grNir.values?grNir.values[0]:(grNir.rasters?grNir.rasters[0]:grNir.data[0]);
+  const width=grNir.width||grNir.cols||grNir.columns, height=grNir.height||grNir.rows;
+  const {xmin,xmax,ymin,ymax}=grNir;
+  const maxW=1024, scale=Math.max(1,Math.ceil(width/maxW)), outW=Math.floor(width/scale), outH=Math.floor(height/scale);
+  const canvas=document.createElement('canvas'); canvas.width=outW; canvas.height=outH;
+  const ctx=canvas.getContext('2d'); const img=ctx.createImageData(outW,outH); let p=0;
+  for(let y=0;y<height;y+=scale){
+    for(let x=0;x<width;x+=scale){
+      const i=y*width+x, r=red[i], n=nir[i]; let ndvi=(n+r)?(n-r)/(n+r):0; if(!isFinite(ndvi)) ndvi=0;
+      const t=Math.max(0,Math.min(1,(ndvi+1)/2)); const col=getNdviColor(t); const m=/rgb\((\d+),(\d+),(\d+)\)/.exec(col);
+      const R=m?+m[1]:0, G=m?+m[2]:0, B=m?+m[3]:0; img.data[p++]=R; img.data[p++]=G; img.data[p++]=B; img.data[p++]=200;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  const bounds=[[ymin,xmin],[ymax,xmax]];
+  return L.imageOverlay(canvas.toDataURL(),bounds,{opacity:.75});
+}
+
+/* === VCI & VHI (placeholders) === */
+function makeGenericTile(urlTemplate, attribution=''){ return L.tileLayer(urlTemplate, { attribution, opacity:.75 }); }
+async function toggleVCI(on=true){ if (on && !LAYERS.vci){ LAYERS.vci = makeGenericTile('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png','Demo VCI'); LAYERS.vci.setOpacity(0.0); LAYERS.vci.addTo(map);} else if (!on && LAYERS.vci){ map.removeLayer(LAYERS.vci); LAYERS.vci=null; } }
+async function toggleVHI(on=true){ if (on && !LAYERS.vhi){ LAYERS.vhi = makeGenericTile('https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png','Demo VHI'); LAYERS.vhi.setOpacity(0.0); LAYERS.vhi.addTo(map);} else if (!on && LAYERS.vhi){ map.removeLayer(LAYERS.vhi); LAYERS.vhi=null; } }
+
+/* ============================================================
+   HYDROLOGIE
+============================================================ */
+async function toggleSoilMoisture(on=true){ if (on && !LAYERS.soilMoisture){ LAYERS.soilMoisture = makeGenericTile('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png','Demo Soil Moisture'); LAYERS.soilMoisture.setOpacity(0.0); LAYERS.soilMoisture.addTo(map);} else if (!on && LAYERS.soilMoisture){ map.removeLayer(LAYERS.soilMoisture); LAYERS.soilMoisture=null; } }
+async function toggleSurfaceWater(on=true){ if (on && !LAYERS.surfaceWater){ LAYERS.surfaceWater = makeGenericTile('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png','Demo Surface Water'); LAYERS.surfaceWater.setOpacity(0.0); LAYERS.surfaceWater.addTo(map);} else if (!on && LAYERS.surfaceWater){ map.removeLayer(LAYERS.surfaceWater); LAYERS.surfaceWater=null; } }
+async function toggleFlood(on=true){ if (on && !LAYERS.flood){ LAYERS.flood = makeGenericTile('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png','Demo Flood'); LAYERS.flood.setOpacity(0.0); LAYERS.flood.addTo(map);} else if (!on && LAYERS.flood){ map.removeLayer(LAYERS.flood); LAYERS.flood=null; } }
+
+/* ============================================================
+   FICHE & NAV THEMES
+============================================================ */
+function afficherFicheObservatoire(feature){
+  const p = feature?.properties || {};
+  document.getElementById('fiche-nom').textContent = p.name || '—';
+  document.getElementById('fiche-type').textContent = p.type || '—';
+  document.getElementById('fiche-annee').textContent = p.year || p.annee || '—';
+  document.getElementById('fiche-source').textContent = p.source || '—';
+  document.getElementById('fiche-statut').textContent = p.statut || '—';
+  document.getElementById('ficheObservatoire').style.display = 'block';
+}
+function filtrerParRegion(region){
+  const views = { all:[12.1348,15.0557,7], nord:[15,15,6], sud:[9,15,6], est:[12,20,6], ouest:[12,10,6] };
+  const v = views[region] || views.all; map.setView([v[0],v[1]], v[2]);
+}
+async function changerTheme(value){
+  if (!value) return;
+  map.fitBounds(ZAKOUMA_BOUNDS, { padding:[20,20] });
+
+  if (value==='zakouma'){ await toggleBoundary(true); await toggleWaterPoints(true); await toggleNDVI(true); }
+  if (value==='veg'){ await toggleNDVI(true); await toggleVCI(true); await toggleVHI(true); await toggleBoundary(true); }
+  if (value==='eau'){ await toggleSurfaceWater(true); await toggleSoilMoisture(true); await toggleFlood(true); await toggleWaterPoints(true); await toggleBoundary(true); }
+}
+/* ============================================================
+   FAUNE / RISQUES / ANTHRO (placeholders)
+============================================================ */
+async function toggleCorridors(on = true){
+  if (on && !LAYERS.corridors){
+    LAYERS.corridors = await loadGeoJson('data/zakouma_corridors.geojson', DEMO_CORRID, {
+      style: stylePolyline('#10b981',3),
+      onEachFeature:(f,l)=>l.bindPopup(`🧭 Corridor: ${f.properties?.name||'—'}`)
+    });
+  }
+  if (!on && LAYERS.corridors){ map.removeLayer(LAYERS.corridors); LAYERS.corridors=null; }
+}
+async function toggleTracks(on = true){
+  if (on && !LAYERS.tracks){
+    LAYERS.tracks = await loadGeoJson('data/zakouma_tracks.geojson', DEMO_TRACKS, {
+      style: stylePolyline('#f59e0b',2),
+      onEachFeature:(f,l)=>l.bindPopup(`🛣️ ${f.properties?.name||'Piste'}`)
+    });
+  }
+  if (!on && LAYERS.tracks){ map.removeLayer(LAYERS.tracks); LAYERS.tracks=null; }
+}
+async function toggleFires(on = true){
+  const controls = document.getElementById('firesControls');
+  if (controls) controls.style.display = on ? 'block' : 'none';
+  if (on && !LAYERS.fires){ LAYERS.fires = addGeoJson({"type":"FeatureCollection","features":[]}); }
+  if (!on && LAYERS.fires){ map.removeLayer(LAYERS.fires); LAYERS.fires = null; }
+}
+async function toggleSPI(on = true){
+  if (on && !LAYERS.spi){ LAYERS.spi = makeGenericTile('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png','Demo SPI'); LAYERS.spi.setOpacity(0.0); LAYERS.spi.addTo(map); }
+  if (!on && LAYERS.spi){ map.removeLayer(LAYERS.spi); LAYERS.spi = null; }
+}
+async function toggleLST(on = true){
+  if (on && !LAYERS.lst){ LAYERS.lst = makeGenericTile('https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png','Demo LST'); LAYERS.lst.setOpacity(0.0); LAYERS.lst.addTo(map); }
+  if (!on && LAYERS.lst){ map.removeLayer(LAYERS.lst); LAYERS.lst = null; }
+}
+async function toggleRoads(on = true){
+  if (on && !LAYERS.roads){ LAYERS.roads = await loadGeoJson('data/roads.geojson', {"type":"FeatureCollection","features":[]}, { style: stylePolyline('#94a3b8',1) }); }
+  if (!on && LAYERS.roads){ map.removeLayer(LAYERS.roads); LAYERS.roads = null; }
+}
+async function toggleAgri(on = true){
+  if (on && !LAYERS.agri){
+    LAYERS.agri = await loadGeoJson('data/agri_change.geojson', {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"year":"2023","change":"+23 ha"},"geometry":{"type":"Polygon","coordinates":[[[19.55,10.92],[19.66,10.92],[19.66,10.84],[19.55,10.84],[19.55,10.92]]]}}]}, {
+      style: stylePolygon('#f43f5e',1.5,0.20),
+      onEachFeature:(f,l)=>l.bindPopup(`🌾 Changement agricole: ${f.properties?.change||'—'} (${f.properties?.year||''})`)
+    });
+  }
+  if (!on && LAYERS.agri){ map.removeLayer(LAYERS.agri); LAYERS.agri = null; }
+}
+
+/* ============================================================
+   PENTE / EXPOSITION / OMBRAGE depuis MNT
+============================================================ */
+async function renderDemProduct(product='pente'){
+  try{
+    const t=await GeoTIFF.fromUrl(DEM_MNT_URL); const gr=await parseGeoraster(t);
+    const arr=gr.values?gr.values[0]:(gr.rasters?gr.rasters[0]:gr.data[0]);
+    const width=gr.width||gr.cols, height=gr.height||gr.rows;
+    const {xmin,xmax,ymin,ymax}=gr;
+    const cellX=Math.abs(gr.pixelWidth||(xmax-xmin)/width), cellY=Math.abs(gr.pixelHeight||(ymax-ymin)/height);
+
+    const maxW=1024, scale=Math.max(1,Math.ceil(width/maxW)), outW=Math.floor(width/scale), outH=Math.floor(height/scale);
+    const canvas=document.createElement('canvas'); canvas.width=outW; canvas.height=outH;
+    const ctx=canvas.getContext('2d'); const img=ctx.createImageData(outW,outH);
+
+    const sunAz=315*Math.PI/180, sunAlt=45*Math.PI/180;
+    const idx=(x,y)=>y*width+x; let p=0;
+
+    for(let y=1;y<height-1;y+=scale){
+      for(let x=1;x<width-1;x+=scale){
+        const z1=arr[idx(x-1,y-1)], z2=arr[idx(x,y-1)], z3=arr[idx(x+1,y-1)];
+        const z4=arr[idx(x-1,y)],   z5=arr[idx(x,y)],   z6=arr[idx(x+1,y)];
+        const z7=arr[idx(x-1,y+1)], z8=arr[idx(x,y+1)], z9=arr[idx(x+1,y+1)];
+        const dzdx=((z3+2*z6+z9)-(z1+2*z4+z7))/(8*cellX);
+        const dzdy=((z7+2*z8+z9)-(z1+2*z2+z3))/(8*cellY);
+        const slope=Math.atan(Math.hypot(dzdx,dzdy));
+        const aspect=Math.atan2(dzdy,-dzdx);
+
+        let R=0,G=0,B=0,A=255;
+        if(product==='pente'){ const t=Math.max(0,Math.min(1,(slope*180/Math.PI)/60)); const v=Math.round(255*t); R=G=B=v; A=220; }
+        else if(product==='exposition'){ let asp=aspect; if(asp<0) asp+=2*Math.PI; const h=asp/(2*Math.PI); const [r,g,b]=hsvToRgb(h,1,1); R=r; G=g; B=b; A=220; }
+        else{ const hs=255*(Math.cos(sunAlt)*Math.cos(slope)+Math.sin(sunAlt)*Math.sin(slope)*Math.cos(sunAz-aspect)); const v=Math.max(0,Math.min(255,Math.round(hs))); R=G=B=v; A=255; }
+        img.data[p++]=R; img.data[p++]=G; img.data[p++]=B; img.data[p++]=A;
+      }
+    }
+    ctx.putImageData(img,0,0);
+    const bounds=[[ymin,xmin],[ymax,xmax]];
+    if(LAYERS.demProduct) map.removeLayer(LAYERS.demProduct);
+    LAYERS.demProduct=L.imageOverlay(canvas.toDataURL(),bounds,{opacity:.85}).addTo(map);
+  }catch(e){ console.error('DEM produit non généré:',e); }
+}
+function hsvToRgb(h,s,v){const i=Math.floor(h*6),f=h*6-i,p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s);let r=0,g=0,b=0;switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;case 5:r=v;g=p;b=q;break}return[Math.round(r*255),Math.round(g*255),Math.round(b*255)]}
+
+/* ============================================================
+   STATS ZONALES NDVI -> maj % forêt
+============================================================ */
+async function updateZonalNdviStats(){
+  try{
+    if(!NDVI_COG_URL_LOCAL) return;
+    const t=await GeoTIFF.fromUrl(NDVI_COG_URL_LOCAL); const gr=await parseGeoraster(t);
+    const arr=gr.values?gr.values[0]:(gr.rasters?gr.rasters[0]:gr.data[0]);
+    const width=gr.width||gr.cols, height=gr.height||gr.rows;
+    const {xmin,xmax,ymin,ymax}=gr;
+    const ring=DEMO_BOUNDARY.features[0].geometry.coordinates[0].map(([x,y])=>({x,y}));
+    const pip=(x,y)=>{let c=false; for(let i=0,j=ring.length-1;i<ring.length;j=i++){const a=ring[i],b=ring[j]; const inter=((a.y>y)!=(b.y>y))&&(x<(b.x-a.x)*(y-a.y)/(b.y-a.y)+a.x); if(inter) c=!c;} return c;};
+    const maxW=600, scale=Math.max(1,Math.ceil(width/maxW));
+    let n=0,sum=0;
+    for(let r=0;r<height;r+=scale){
+      const lat=ymax-(r+0.5)*((ymax-ymin)/height);
+      for(let c=0;c<width;c+=scale){
+        const lon=xmin+(c+0.5)*((xmax-xmin)/width);
+        if(!pip(lon,lat)) continue;
+        const v=arr[r*width+c]; if(v==null||isNaN(v)) continue; n++; sum+=v;
+      }
+    }
+    if(n>0){ const mean=sum/n; const pct=Math.round(Math.max(0,Math.min(1,(mean+1)/2))*100); const el=document.getElementById('val-foret'); if(el) el.textContent=pct; }
+  }catch(e){ console.warn('Zonal NDVI échouées:',e); }
+}
+
+/* ============================================================
+   Dashboard / PDF / Cesium (inchangés + hooks DEM)
+============================================================ */
+const ctx = document.getElementById('lineChart').getContext('2d');
+window.indicateursData = {
+  '2013': { stress:43, foret:62, urbain:25 },
+  '2019': { stress:50, foret:65, urbain:28 },
+  '2020': { stress:52, foret:66, urbain:30 },
+  '2022': { stress:55, foret:67, urbain:32 },
+  'all':  { stress:55, foret:67, urbain:32 }
+};
+function genererGaussienne(mu, sigma, n=100){
+  const data=[], labels=[]; const min = mu-4*sigma, max = mu+4*sigma; const pas=(max-min)/n;
+  for(let x=min; x<=max; x+=pas){
+    const y = (1/(sigma*Math.sqrt(2*Math.PI))) * Math.exp(-0.5 * ((x-mu)/sigma)**2);
+    labels.push(x.toFixed(2)); data.push(y);
+  }
+  return { labels, data };
+}
+const gauss = genererGaussienne(0,1,120);
+window.chart = new Chart(ctx, {
+  type:'line',
+  data:{
+    labels: gauss.labels,
+    datasets:[
+      { label:'🌾 Terres cultivées', data:[50,60,70,80], borderColor:'#38bdf8', backgroundColor:'rgba(56,189,248,.35)', tension:.4, fill:true },
+      { label:'🔥 Sécheresses', data:[20,30,40,55], borderColor:'#f87171', backgroundColor:'rgba(248,113,113,.35)', tension:.4, fill:true },
+      { label:'👥 Population', data:[30,35,40,50], borderColor:'#c084fc', backgroundColor:'rgba(192,132,252,.35)', tension:.4, fill:true },
+      { label:'📊 Distribution Gaussienne', data: gauss.data, borderColor:'#34d399', backgroundColor:'rgba(52,211,153,.3)', tension:.4, fill:true, pointRadius:0 }
+    ]
+  },
+  options:{
+    responsive:true,
+    plugins:{ legend:{ labels:{ color:'#e2e8f0', font:{ size:14 } } } },
+    scales:{ x:{ ticks:{ color:'#e2e8f0' }, grid:{ color:'rgba(255,255,255,.1)' } }, y:{ ticks:{ color:'#e2e8f0' }, grid:{ color:'rgba(255,255,255,.1)' } } }
+  }
+});
+function filterByYear(evt, year){
+  const labels = ['2013','2019','2020','2022'];
+  const idx = labels.indexOf(year);
+  if (idx === -1 || !window.chart) return;
+  const d = window.chart.data;
+  d.labels = [year];
+  d.datasets[0].data = [d.datasets[0].data[idx]];
+  d.datasets[1].data = [d.datasets[1].data[idx]];
+  d.datasets[2].data = [d.datasets[2].data[idx]];
+  window.chart.update();
+  const info = window.indicateursData[year];
+  document.getElementById('val-stress').textContent = info.stress;
+  document.getElementById('val-foret').textContent = info.foret;
+  document.getElementById('val-urbain').textContent = info.urbain;
+  document.querySelectorAll('.filters-box button').forEach(b=>b.classList.remove('active'));
+  if (evt && evt.target) evt.target.classList.add('active');
+}
+function resetChart(){
+  const d = window.chart.data; d.labels = ['2013','2019','2020','2022'];
+  d.datasets[0].data = [50,60,70,80];
+  d.datasets[1].data = [20,30,40,55];
+  d.datasets[2].data = [30,35,40,50];
+  window.chart.update();
+  const info = window.indicateursData['all'];
+  document.getElementById('val-stress').textContent = info.stress;
+  document.getElementById('val-foret').textContent = info.foret;
+  document.getElementById('val-urbain').textContent = info.urbain;
+  document.querySelectorAll('.filters-box button').forEach(b=>b.classList.remove('active'));
+}
+function ouvrirGraphiqueZoom(){
+  const modal = document.getElementById('modalChart'); modal.style.display = 'flex';
+  const ctxZ = document.getElementById('lineChartZoom').getContext('2d');
+  window.chartZoom = new Chart(ctxZ, { type:'line', data: JSON.parse(JSON.stringify(window.chart.data)), options: window.chart.options });
+}
+function fermerGraphiqueZoom(){
+  const modal = document.getElementById('modalChart'); modal.style.display = 'none';
+  if (window.chartZoom){ window.chartZoom.destroy(); window.chartZoom = null; }
+}
+
+/* Export PDF */
+async function exportPDF(){
+  const { jsPDF } = window.jspdf; const pdf = new jsPDF();
+  pdf.setFontSize(18); pdf.text('Rapport GEO-SOVEREIGN — Zakouma', 20, 20);
+  pdf.setFontSize(12); pdf.text(`Date : ${new Date().toLocaleDateString('fr-FR')}`, 20, 30);
+  pdf.text(`📊 Stress hydrique : ${document.getElementById('val-stress').textContent}%`, 20, 40);
+  pdf.text(`🌲 Couverture forestière : ${document.getElementById('val-foret').textContent}%`, 20, 50);
+  pdf.text(`🏙️ Croissance urbaine : ${document.getElementById('val-urbain').textContent}%`, 20, 60);
+  const canvas = document.getElementById('lineChart'); const imageData = canvas.toDataURL('image/png', 1.0);
+  pdf.addImage(imageData, 'PNG', 15, 75, 180, 80);
+  pdf.save('rapport_GEO-SOVEREIGN_Zakouma.pdf');
+}
+
+/* Cesium 3D */
+function ensureCesium(){
+  if (viewerCesium) return viewerCesium;
+
+  // ✅ version SANS await
+  viewerCesium = new Cesium.Viewer("cesiumContainer", {
+    imageryProvider: undefined,
+    terrainProvider: Cesium.Terrain.fromWorldTerrain({
+      requestVertexNormals: true,
+      requestWaterMask: true
+    }),
+    baseLayerPicker: false,
+    animation: false,
+    timeline: false
+  });
+
+  // fond OSM
+  viewerCesium.imageryLayers.addImageryProvider(
+    new Cesium.UrlTemplateImageryProvider({
+      url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      credit: "© OpenStreetMap"
+    })
+  );
+
+  // relief + ombres
+  viewerCesium.scene.globe.enableLighting = true;
+  viewerCesium.shadowMap.enabled = true;
+  viewerCesium.shadowMap.softShadows = true;
+  viewerCesium.scene.globe.depthTestAgainstTerrain = true;
+
+  // (optionnel) exagération du relief
+  viewerCesium.scene.verticalExaggeration = 1.3;
+  viewerCesium.scene.verticalExaggerationRelativeHeight = 0;
+
+  // cadrer la caméra
+  viewerCesium.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(19.9, 10.97, 800000)
+  });
+
+  // forcer un rendu
+  viewerCesium.scene.requestRender();
+
+  return viewerCesium;
+}
+// === Sync Leaflet -> Cesium ===
+function syncLeafletToCesium(){
+  const b = map.getBounds();
+  const rect = Cesium.Rectangle.fromDegrees(b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+  ensureCesium();
+  viewerCesium.camera.setView({ destination: rect });
+}
+
+// (optionnel) garder la sync si Leaflet bouge pendant que 3D est ouverte
+function attachLeafletSync(){
+  if (attachLeafletSync._bound) return;
+  map.on('moveend', () => { if (cesiumActive) syncLeafletToCesium(); });
+  attachLeafletSync._bound = true;
+}
+attachLeafletSync();
+
+function toggleCesium(){
+  const cesiumDiv  = document.getElementById('cesiumContainer');
+  const leafletDiv = document.getElementById('map');
+  const layersPanel = document.getElementById('cesiumLayers'); // peut être null
+
+  if (!cesiumActive){
+    ensureCesium();                 // crée Cesium si besoin
+
+    // montrer 3D, cacher 2D
+    leafletDiv.style.display = 'none';
+    cesiumDiv.style.display = 'block';
+    if (layersPanel) layersPanel.style.display = 'block';
+
+    // resize/rendu forcés
+    try { viewerCesium.resize(); } catch(_) {}
+    viewerCesium.scene.requestRender?.();
+
+    cesiumActive = true;
+
+    // (optionnel) mettre à jour le texte du bouton
+    const btn = document.getElementById('btnToggle3DFixed');
+    if (btn) btn.textContent = '↩️ Revenir en 2D';
+  } else {
+    // cacher 3D, montrer 2D
+    cesiumDiv.style.display = 'none';
+    if (layersPanel) layersPanel.style.display = 'none';
+    leafletDiv.style.display = 'block';
+
+    // recalcul Leaflet (deux ticks pour être sûr)
+    requestAnimationFrame(() => {
+      map.invalidateSize();
+      setTimeout(() => map.invalidateSize(), 100);
+    });
+
+    cesiumActive = false;
+
+    // (optionnel) remettre le texte du bouton
+    const btn = document.getElementById('btnToggle3DFixed');
+    if (btn) btn.textContent = '🌍 2D / 3D';
+  }
+}
+/* ============================================================
+   INIT
+============================================================ */
+function toggleSidebar(){
+  document.querySelector('.sidebar').classList.toggle('collapsed');
+  // après l’animation CSS (~300 ms), force Leaflet à se recalculer
+  setTimeout(() => map.invalidateSize(), 310);
+}
+async function init(){
+  await toggleBoundary(true);
+  await toggleNDVI(true);
+  await toggleWaterPoints(true);
+}
+(function(){ const c = document.getElementById('toggleFires'); if (c) toggleFires(c.checked); })();
+ /* === NDVI calculé depuis B04/B08 (COGs) === */
+async function toggleNDVICalc(on = true){
+  if (on && !LAYERS.ndviCalc){
+    try{
+      // charge les 2 COGs
+      const [tiffR, tiffN] = await Promise.all([
+        GeoTIFF.fromUrl(S2_B04_COG_URL),
+        GeoTIFF.fromUrl(S2_B08_COG_URL)
+      ]);
+      const [rRed, rNir] = await Promise.all([
+        parseGeoraster(tiffR),
+        parseGeoraster(tiffN)
+      ]);
+
+      // IMPORTANT: on suppose même géométrie / résolution
+      LAYERS.ndviCalc = new GeoRasterLayer({
+        georasters: [rRed, rNir],
+        resolution: 256,
+        opacity: .75,
+        pixelValuesToColorFn: (vals) => {
+          const red = vals?.[0];
+          const nir = vals?.[1];
+          if (red == null || nir == null || isNaN(red) || isNaN(nir)) return null;
+          const s = (nir + red);
+          if (s === 0) return null;
+          // NDVI calculé
+          const ndvi = (nir - red) / s; // ~[-1,1]
+          // normalise 0..1 pour la palette
+          const t = Math.max(0, Math.min(1, (ndvi + 1) / 2));
+          return getNdviColor(t);
+        }
+      }).addTo(map);
+
+      ensureNdviLegend();
+    }catch(e){
+      console.warn('NDVI calculé (B04/B08) non chargé :', e);
+      alert('Impossible de calculer le NDVI : vérifie les URLs des COGs B04/B08.');
+    }
+  }
+  if (!on && LAYERS.ndviCalc){
+    map.removeLayer(LAYERS.ndviCalc);
+    LAYERS.ndviCalc = null;
+    // si aucune autre couche NDVI n’est active, on peut retirer la légende
+    const ndviAny = LAYERS.ndviVector || LAYERS.ndviCog || LAYERS.ndviCalc;
+    if (!ndviAny) removeNdviLegend();
+  }
+}
+
+/* === Panneau Traitement — show/hide === */
+function toggleTraitement(){
+  const p = document.getElementById('interfaceTraitement');
+  if (!p) return;
+  p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
+
+}
+ // === Wiring UI quand le DOM est prêt
+const btnFixed = document.getElementById('btnToggle3DFixed');
+if (btnFixed) btnFixed.addEventListener('click', () => toggleCesium());
+
+// ---------- FONCTIONS 3D (déclarées AVANT d'être utilisées) ----------
+
+// Bâtiments 3D (Cesium OSM Buildings)
+async function toggleBuildings3D(on = true){
+  if (!viewerCesium) ensureCesium();
+
+  if (on) {
+    if (!layersCesium.buildingsOSM) {
+      try {
+        const tileset = await Cesium.createOsmBuildingsAsync();
+        layersCesium.buildingsOSM = viewerCesium.scene.primitives.add(tileset);
+        viewerCesium.scene.requestRender?.();
+      } catch(e){
+        console.error('OSM Buildings error:', e);
+        alert("Impossible de charger les bâtiments OSM.");
+        const c = document.getElementById('toggleBuildings3D');
+        if (c) c.checked = false;
+      }
+    }
+  } else {
+    if (layersCesium.buildingsOSM) {
+      viewerCesium.scene.primitives.remove(layersCesium.buildingsOSM);
+      layersCesium.buildingsOSM = null;
+      viewerCesium.scene.requestRender?.();
+    }
+  }
+}
+
+// Démo Arbres 3D (billboards)
+async function toggleTrees3D(on = true){
+  if (!viewerCesium) ensureCesium();
+
+  if (on) {
+    if (!layersCesium.treesDemo) {
+      const collection = new Cesium.BillboardCollection();
+      layersCesium.treesDemo = collection;
+      viewerCesium.scene.primitives.add(collection);
+
+      const pts = [
+        [19.82, 10.98],
+        [19.84, 10.99],
+        [19.86, 10.97],
+        [19.88, 11.00],
+        [19.90, 10.96],
+      ];
+      const img = "https://cdn.jsdelivr.net/gh/epistemic-polymath/assets@main/icons/tree_round.png";
+      for (const [lon, lat] of pts){
+        collection.add({
+          position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
+          image: img,
+          scale: 1.2
+        });
+      }
+      viewerCesium.scene.requestRender?.();
+    }
+  } else {
+    if (layersCesium.treesDemo) {
+      viewerCesium.scene.primitives.remove(layersCesium.treesDemo);
+      layersCesium.treesDemo = null;
+      viewerCesium.scene.requestRender?.();
+    }
+  }
+}
+/*
+// Google Photorealistic 3D — sécurisé (local uniquement)
+const ENABLE_GOOGLE_3D = true;               // laisse false pour éviter toute facture
+const GOOGLE_MAPS_API_KEY = "AIzaSyBIkHrWrzrai7ab8a69qYygPTiTEw_h4zk";               // mets ta clé uniquement pour test local
+const SAFE_HOSTS = new Set(["localhost","127.0.0.1"]);
+*/
+// Fonction d’activation 3D Google (unique, propre)
+async function toggleGoogle3DTiles(on = true){
+  const chk = document.getElementById('toggleGoogle3D');
+
+  if (!on){
+    if (layersCesium.google3DTiles && viewerCesium){
+      viewerCesium.scene.primitives.remove(layersCesium.google3DTiles);
+      layersCesium.google3DTiles = null;
+      viewerCesium.scene.requestRender?.();
+    }
+    return;
+  }
+
+  // ✅ utilise le même espace de noms partout
+  if (!window.ENABLE_GOOGLE_3D){
+    alert("Google 3D est désactivé (ENABLE_GOOGLE_3D=false).");
+    if (chk) chk.checked = false;
+    return;
+  }
+  if (!window.SAFE_HOSTS.has(location.hostname)){
+    alert("Google 3D n’est autorisé qu’en local (localhost).");
+    if (chk) chk.checked = false;
+    return;
+  }
+  if (!window.GOOGLE_MAPS_API_KEY){
+    alert("Clé Google Maps manquante.");
+    if (chk) chk.checked = false;
+    return;
+  }
+
+  if (!viewerCesium) ensureCesium();
+  try{
+    if (!layersCesium.google3DTiles){
+      const tiles = await Cesium.createGooglePhotorealistic3DTileset(window.GOOGLE_MAPS_API_KEY);
+      layersCesium.google3DTiles = viewerCesium.scene.primitives.add(tiles);
+      await tiles.readyPromise;
+      viewerCesium.zoomTo(tiles);
+      viewerCesium.scene.requestRender?.();
+    }
+  }catch(e){
+    console.error("Erreur Google 3D Tiles:", e);
+    alert("Impossible de charger Google Photorealistic 3D Tiles.");
+    if (chk) chk.checked = false;
+  }
+}
+
+// ---------- LISTENERS (utilisent les fonctions ci-dessus) ----------
+document.addEventListener('DOMContentLoaded', () => {
+  const chkPC  = document.getElementById('togglePointCloud');
+  const chkTer = document.getElementById('toggleTerrainCustom');
+  const chkBld = document.getElementById('toggleBuildings3D');
+  const chkTrees = document.getElementById('toggleTrees3D');
+  const chkGoogle3D = document.getElementById('toggleGoogle3D');
+
+  if (chkPC)  chkPC.addEventListener('change',  e => {
+    if (!cesiumActive) toggleCesium();
+    togglePointCloudCesium(e.target.checked);
+  });
+
+  if (chkTer) chkTer.addEventListener('change', e => {
+    if (!cesiumActive) toggleCesium();
+    toggleTerrainCesium(e.target.checked);
+  });
+
+  if (chkBld) chkBld.addEventListener('change', e => {
+    if (!cesiumActive) toggleCesium();
+    toggleBuildings3D(e.target.checked);
+  });
+
+  if (chkTrees) chkTrees.addEventListener('change', e => {
+    if (!cesiumActive) toggleCesium();
+    toggleTrees3D(e.target.checked);
+  });
+  // Option Google 3D : cache si pas localhost
+  if (chkGoogle3D && !SAFE_HOSTS.has(location.hostname)){
+    chkGoogle3D.closest('label')?.remove();
+  } else if (chkGoogle3D){
+    chkGoogle3D.addEventListener('change', e => {
+      if (!cesiumActive) toggleCesium();
+      toggleGoogle3DTiles(e.target.checked);
+    });
+  }
+})
+// === DÉMARRAGE ===
+</script>
+</body>
+</script>
+</html> 
